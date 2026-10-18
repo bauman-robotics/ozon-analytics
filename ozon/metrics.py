@@ -101,6 +101,9 @@ def build(snapshot: dict, costs: dict[str, float] | None = None) -> dict:
     period_from = str(period.get("from") or "")
     current_rows = [r for r in rows if str(r.get("day")) >= period_from]
     prev_rows = [r for r in rows if str(r.get("day")) < period_from]
+    # С подпиской Premium (без Plus) Ozon не отдаёт returns/cancellations/
+    # delivered_units. Тогда return_rate=0 — это «неизвестно», а не «нет возвратов».
+    has_returns = any("returns" in row for row in current_rows)
 
     kpi = _aggregate(current_rows)
     prev = _aggregate(prev_rows)
@@ -119,6 +122,7 @@ def build(snapshot: dict, costs: dict[str, float] | None = None) -> dict:
     for day in sorted(by_day):
         item = by_day[day]
         item["conv"] = safe_div(item["tocarts"], item["sessions"])
+        item["returns_known"] = has_returns
         daily.append(item)
 
     # --- по SKU ---------------------------------------------------------
@@ -167,6 +171,7 @@ def build(snapshot: dict, costs: dict[str, float] | None = None) -> dict:
     for sku, item in by_sku.items():
         stock = stocks.get(str(sku)) or {}
         turn = turnover.get(str(sku)) or {}
+        stock_known = bool(stock or turn)
         offer_id = stock.get("offer_id") or turn.get("offer_id") or ""
         cost = costs.get(str(sku)) or costs.get(offer_id) or 0.0
         revenue = item["revenue"]
@@ -192,6 +197,7 @@ def build(snapshot: dict, costs: dict[str, float] | None = None) -> dict:
                 "units": units,
                 "avg_price": safe_div(revenue, units),
                 "returns": item["returns"],
+                "returns_known": has_returns,
                 "return_rate": safe_div(item["returns"], units),
                 "sessions": item["sessions"],
                 "conv": safe_div(item["tocarts"], item["sessions"]),
@@ -199,6 +205,7 @@ def build(snapshot: dict, costs: dict[str, float] | None = None) -> dict:
                 "prev_revenue": item["prev_revenue"],
                 "revenue_delta": safe_div(revenue - item["prev_revenue"], item["prev_revenue"]) if item["prev_revenue"] else None,
                 "stock": to_int(stock.get("available")) if stock else to_int(turn.get("current_stock")),
+                "stock_known": stock_known,
                 "idc": to_float(stock.get("idc") if stock else turn.get("idc")),
                 "grade": (stock.get("grade") or turn.get("turnover_grade") or "") if (stock or turn) else "",
                 "turnover": to_float(turn.get("turnover")),
@@ -230,6 +237,7 @@ def build(snapshot: dict, costs: dict[str, float] | None = None) -> dict:
         "alerts": alerts,
         "finance": finance,
         "has_funnel": kpi["sessions"] > 0,
+        "has_returns": has_returns,
         "has_costs": bool(costs),
         "has_settlement": any(row.get("net_before_cost") is not None for row in sku_rows),
     }
@@ -260,16 +268,19 @@ def _alerts(sku_rows: list[dict]) -> list[dict]:
         stock = row["stock"]
         idc = row["idc"]
         grade = (row["grade"] or "").upper()
+        stock_known = bool(row.get("stock_known", True))
 
-        if stock <= 0 and row["units"] > 0:
+        # Если остатки не загрузились (нет роли «Товары» или --no-stocks),
+        # stock=0 — это не «нет в наличии», а «неизвестно».
+        if stock_known and stock <= 0 and row["units"] > 0:
             alerts.append(_alert("red", name, row, "Нет в наличии", f"Продано {to_int(row['units'])} шт. за период, остатка нет."))
-        elif 0 < idc < 14:
+        elif stock_known and 0 < idc < 14:
             alerts.append(_alert("red", name, row, f"Хватит на {int(idc)} дн.", "Пора планировать поставку."))
 
-        if grade == "SURPLUS" or idc > 120:
+        if grade == "SURPLUS" or (stock_known and idc > 120):
             alerts.append(_alert("yellow", name, row, "Избыток остатка", f"Запаса на {idc:.0f} дн. Риск платного хранения и заморозки денег."))
 
-        if row["return_rate"] >= 0.15 and row["returns"] >= 3:
+        if row.get("returns_known", True) and row["return_rate"] >= 0.15 and row["returns"] >= 3:
             alerts.append(
                 _alert(
                     "yellow", name, row, "Высокие возвраты",

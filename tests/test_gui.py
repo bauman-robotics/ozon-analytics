@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -33,6 +34,23 @@ class CommandTests(unittest.TestCase):
     def test_python_is_not_windowed(self):
         exe = Path(gui.python_exe())
         self.assertNotIn(exe.name.lower(), {"pythonw.exe", "pythonw"})
+
+
+class DashboardPathTests(unittest.TestCase):
+    def test_demo_action_always_opens_demo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "dashboard.html").write_text("live", encoding="utf-8")
+            (folder / "dashboard-demo.html").write_text("demo", encoding="utf-8")
+            self.assertEqual(gui.dashboard_path("demo", folder).name, "dashboard-demo.html")
+
+    def test_collect_falls_back_to_demo_only_when_live_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "dashboard-demo.html").write_text("demo", encoding="utf-8")
+            self.assertEqual(gui.dashboard_path("collect_all", folder).name, "dashboard-demo.html")
+            (folder / "dashboard.html").write_text("live", encoding="utf-8")
+            self.assertEqual(gui.dashboard_path("collect_all", folder).name, "dashboard.html")
 
 
 class StatusTests(unittest.TestCase):

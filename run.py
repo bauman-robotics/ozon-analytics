@@ -24,6 +24,24 @@ from ozon.util import fmt_money, fmt_pct
 COSTS_FILE = ROOT / "costs.csv"
 
 
+class OutputError(RuntimeError):
+    """Не удалось записать файл отчёта (обычно файл занят другой программой)."""
+
+
+def _write_error_text(path: Path, exc: OSError) -> str:
+    try:
+        shown = path.relative_to(ROOT)
+    except ValueError:
+        shown = path
+    hint = ""
+    if isinstance(exc, PermissionError):
+        hint = (
+            " Файл открыт в Excel/редакторе или защищён от записи — "
+            "закройте его и повторите: py run.py report"
+        )
+    return f"{shown}: {exc}{hint}"
+
+
 def _costs_path(args: argparse.Namespace) -> Path | None:
     if getattr(args, "costs", None):
         return Path(args.costs)
@@ -39,9 +57,21 @@ def _build_report(
     costs = metrics.load_costs(_costs_path(args))
     data = metrics.build(snapshot, costs)
     html_text = report.render(data)
-    path = store.save_text(html_text, filename)
-    for csv_path in report.write_csvs(data, store.OUT_DIR, suffix):
+
+    # Сначала CSV: если дашборд не запишется, выгрузки уже будут на диске.
+    csv_paths, csv_errors = report.write_csvs(data, store.OUT_DIR, suffix)
+    for csv_path in csv_paths:
         print(f"  CSV: {csv_path.relative_to(ROOT)}")
+    for csv_path, exc in csv_errors:
+        print(f"  ! CSV не сохранён: {_write_error_text(csv_path, exc)}")
+
+    try:
+        path = store.save_text(html_text, filename)
+    except OSError as exc:
+        raise OutputError(
+            f"Дашборд не сохранён: {_write_error_text(store.OUT_DIR / filename, exc)}"
+        ) from exc
+
     kpi = data["kpi"]
     print(
         f"  Выручка: {fmt_money(kpi['revenue'])} · заказов: {kpi['units']:.0f} шт · "
@@ -153,7 +183,11 @@ def cmd_collect(args: argparse.Namespace) -> int:
         print(f"Ошибка API: {exc}")
         return 1
 
-    path = store.save(snapshot, args.snapshot or store.DEFAULT_SNAPSHOT)
+    try:
+        path = store.save(snapshot, args.snapshot or store.DEFAULT_SNAPSHOT)
+    except OSError as exc:
+        print(f"Снимок не сохранён: {_write_error_text(Path(args.snapshot or store.DEFAULT_SNAPSHOT), exc)}")
+        return 1
     print(f"Снимок сохранён: {path}")
     for warning in snapshot["meta"].get("warnings") or []:
         print(f"  ! {warning}")
@@ -163,6 +197,9 @@ def cmd_collect(args: argparse.Namespace) -> int:
         try:
             out = _build_report(snapshot, args)
             print(f"Дашборд: {out}")
+        except OutputError as exc:
+            print(f"Не удалось собрать дашборд: {exc}")
+            return 1
         except Exception as exc:  # noqa: BLE001 - показываем пользователю причину
             print(f"Не удалось собрать дашборд: {exc}")
             return 1
@@ -175,7 +212,11 @@ def cmd_report(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:
         print(exc)
         return 2
-    out = _build_report(snapshot, args)
+    try:
+        out = _build_report(snapshot, args)
+    except (OutputError, OSError) as exc:
+        print(exc)
+        return 1
     print(f"Готово: {out}")
     print(f"Откройте в браузере: file://{out}")
     return 0
@@ -183,9 +224,17 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 def cmd_demo(args: argparse.Namespace) -> int:
     snapshot = demo.make_snapshot(days=args.days, seed=args.seed)
-    path = store.save(snapshot, store.DATA_DIR / "demo_snapshot.json")
+    try:
+        path = store.save(snapshot, store.DATA_DIR / "demo_snapshot.json")
+    except OSError as exc:
+        print(f"Демо-снимок не сохранён: {_write_error_text(store.DATA_DIR / 'demo_snapshot.json', exc)}")
+        return 1
     print(f"Демо-снимок: {path}")
-    out = _build_report(snapshot, args, filename="dashboard-demo.html", suffix="-demo")
+    try:
+        out = _build_report(snapshot, args, filename="dashboard-demo.html", suffix="-demo")
+    except (OutputError, OSError) as exc:
+        print(exc)
+        return 1
     print(f"Готово: {out}")
     print(f"Откройте в браузере: file://{out}")
     return 0
@@ -215,7 +264,11 @@ def cmd_calc(args: argparse.Namespace) -> int:
         print("Нет товаров с продажами за период — нечего считать.")
         return 1
 
-    path = store.save_text(calcpage.render(model), "calculator.html")
+    try:
+        path = store.save_text(calcpage.render(model), "calculator.html")
+    except OSError as exc:
+        print(f"Калькулятор не сохранён: {_write_error_text(store.OUT_DIR / 'calculator.html', exc)}")
+        return 1
     print(f"Товаров: {len(model['skus'])} · комиссия {model['commission_rate'] * 100:.1f}% · "
           f"реклама {model['ad_rate'] * 100:.1f}%")
     print(f"Готово: {path}")

@@ -10,14 +10,24 @@ from .util import api_datetime, iso_day, to_float, to_int
 
 SALES_METRICS = ["revenue", "ordered_units", "delivered_units", "returns", "cancellations"]
 
-# Лимит Ozon — не более 14 метрик в одном запросе.
-# Только те метрики, которые реально нужны дашборду.
-# Часть «search/pdp»-метрик Ozon помечает как deprecated и отклоняет весь запрос,
-# поэтому их не запрашиваем.
-FUNNEL_METRICS = ["session_view", "hits_tocart", "hits_view"]
-FUNNEL_FALLBACK = ["session_view"]
+# Минимальный набор, который Ozon отдаёт всем продавцам. Если расширенный
+# набор отклонён (нет Premium Plus или метрика устарела), повторяем с ним.
+SALES_FALLBACK_METRICS = ["revenue", "ordered_units"]
+
+# Ozon пометил метрики воронки (session_view, hits_view, hits_tocart,
+# position_category) как deprecated: запрос с ними целиком отклоняется с
+# HTTP 400 «deprecated metrics used». Поэтому воронку в live-сборе не
+# запрашиваем — иначе теряем время и получаем ложное «часть данных не загружена».
+# В демо-данных воронка остаётся, чтобы показать, как выглядит блок.
+FUNNEL_METRICS: list[str] = []
 
 PAGE_LIMIT = 1000
+
+
+def _warn(client: OzonClient, message: str) -> None:
+    warnings = getattr(client, "warnings", None)
+    if isinstance(warnings, list):
+        warnings.append(message)
 
 
 def fetch_roles(client: OzonClient, *, attempts: int = 4) -> dict:
@@ -45,7 +55,8 @@ def fetch_analytics_data(
     rows: list[dict] = []
     offset = 0
     truncated = True
-    for _ in range(max_pages):
+    partial_error = False
+    for page in range(max_pages):
         payload = {
             "date_from": iso_day(date_from),
             "date_to": iso_day(date_to),
@@ -55,7 +66,20 @@ def fetch_analytics_data(
             "limit": PAGE_LIMIT,
             "offset": offset,
         }
-        response = client.post("/v1/analytics/data", payload)
+        try:
+            response = client.post("/v1/analytics/data", payload)
+        except OzonAPIError as exc:
+            # Первую страницу не получили — пусть вызывающий код решает,
+            # пробовать ли более скромный набор метрик. Если же данные уже
+            # частично загружены, лучше отдать их, чем потерять всё.
+            if not rows:
+                raise
+            partial_error = True
+            _warn(
+                client,
+                f"Аналитика продаж загружена частично: страница {page + 1} не получена ({exc})",
+            )
+            break
         result = response.get("result") or {}
         data = result.get("data") or []
         for item in data:
@@ -81,10 +105,11 @@ def fetch_analytics_data(
             truncated = False
             break
         offset += PAGE_LIMIT
-    if truncated:
-        client.warnings.append(
+    if truncated and not partial_error:
+        _warn(
+            client,
             f"Данные /v1/analytics/data обрезаны на {max_pages * PAGE_LIMIT} строках — "
-            "увеличьте max_pages или уменьшите период"
+            "увеличьте max_pages или уменьшите период",
         )
     return rows
 
@@ -95,7 +120,17 @@ def fetch_stocks(client: OzonClient, skus: list[int], *, chunk: int = 100) -> di
     unique = [str(s) for s in dict.fromkeys(skus) if s]
     for start in range(0, len(unique), chunk):
         part = unique[start : start + chunk]
-        response = client.post("/v1/analytics/stocks", {"skus": part})
+        try:
+            response = client.post("/v1/analytics/stocks", {"skus": part})
+        except OzonAPIError as exc:
+            if not aggregated:
+                raise
+            _warn(
+                client,
+                f"Остатки загружены частично: не получена порция SKU "
+                f"{start + 1}–{start + len(part)} ({exc})",
+            )
+            break
         for item in response.get("items") or []:
             sku = to_int(item.get("sku"))
             if not sku:

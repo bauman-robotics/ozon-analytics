@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import random
 import time
@@ -24,9 +25,12 @@ _HINTS: list[tuple[str, str]] = [
     ("not signed", "Проверьте, что оферта Seller API принята в личном кабинете."),
 ]
 
-# Минимальный интервал между вызовами для методов с жёстким лимитом
+# Минимальный интервал между вызовами для методов с жёстким лимитом.
+# Ozon: /v1/analytics/data — не больше 1 запроса в минуту (и 50 в сутки
+# без Premium Plus), /v1/analytics/turnover/stocks — 1 запрос в минуту.
 METHOD_INTERVALS: dict[str, float] = {
-    "/v1/analytics/turnover/stocks": 60.0,   # 1 запрос в минуту на Client-Id
+    "/v1/analytics/data": 60.0,
+    "/v1/analytics/turnover/stocks": 60.0,
 }
 
 
@@ -76,11 +80,12 @@ class OzonClient:
 
     # --- публичный API -------------------------------------------------
     def post(self, path: str, payload: dict | None = None, *, attempts: int = 4) -> dict:
-        self._respect_method_limit(path)
         data = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8")
         last_error: Exception | None = None
 
         for attempt in range(1, attempts + 1):
+            # Проверяем лимит перед каждой попыткой, в том числе перед ретраем.
+            self._respect_method_limit(path)
             request = urllib.request.Request(
                 self.base_url + path,
                 data=data,
@@ -99,15 +104,24 @@ class OzonClient:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
                     raw = response.read()
                 self._last_by_path[path] = time.monotonic()
-                return json.loads(raw.decode("utf-8")) if raw else {}
+                if not raw:
+                    return {}
+                try:
+                    return json.loads(raw.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError) as exc:
+                    raise OzonAPIError(
+                        f"Ozon API вернул не-JSON ответ: {raw[:200]!r}"
+                    ) from exc
             except urllib.error.HTTPError as exc:
+                self._last_by_path[path] = time.monotonic()
                 raw = exc.read().decode("utf-8", "replace")
                 code, message = self._parse_error(raw)
                 if exc.code in (429, 500, 502, 503, 504) and attempt < attempts:
-                    self.sleep(self._backoff(attempt))
+                    self.sleep(self._retry_delay(exc.headers, attempt, exc.code))
                     continue
                 raise OzonAPIError(self._friendly(message, exc.code), exc.code, code, raw) from exc
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as exc:
+                self._last_by_path[path] = time.monotonic()
                 last_error = exc
                 if attempt < attempts:
                     self.sleep(self._backoff(attempt))
@@ -131,6 +145,20 @@ class OzonClient:
     @staticmethod
     def _backoff(attempt: int) -> float:
         return min(2 ** (attempt - 1), 8) + random.uniform(0, 0.4)
+
+    @staticmethod
+    def _retry_delay(headers, attempt: int, status: int) -> float:
+        """Пауза перед ретраем: Retry-After важнее экспоненциальной задержки."""
+        value = headers.get("Retry-After") if headers else None
+        if value:
+            try:
+                return max(0.0, min(float(value), 120.0))
+            except (TypeError, ValueError):
+                pass
+        if status == 429:
+            # Лимит Ozon часто минутный — короткой паузы в 1–8 секунд мало.
+            return min(max(5.0, 2 ** attempt), 60.0) + random.uniform(0, 0.4)
+        return OzonClient._backoff(attempt)
 
     @staticmethod
     def _parse_error(raw: str) -> tuple[Any, str]:

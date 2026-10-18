@@ -1,4 +1,7 @@
-"""Сбор снимка данных: продажи, воронка, остатки, финансы."""
+"""Сбор снимка данных: продажи, остатки, оборачиваемость, финансы.
+
+Воронка не собирается: Ozon отключил её метрики (см. ozon/api.py).
+"""
 
 from __future__ import annotations
 
@@ -9,25 +12,6 @@ from . import api, finance as finance_api
 from .client import OzonAPIError, OzonClient
 from .config import Settings
 from .util import iso_day, to_int, utc_now_iso
-
-
-def _merge(rows: list[dict], patch: list[dict]) -> list[dict]:
-    """Склеивает строки по (sku, day)."""
-    index: dict[tuple, dict] = {}
-    for row in rows:
-        key = (to_int(row.get("sku")), str(row.get("day")))
-        index[key] = row
-    for row in patch:
-        key = (to_int(row.get("sku")), str(row.get("day")))
-        target = index.get(key)
-        if target is None:
-            index[key] = row
-        else:
-            for field, value in row.items():
-                if field in ("sku", "day", "name") and target.get(field):
-                    continue
-                target[field] = value
-    return list(index.values())
 
 
 def collect(
@@ -65,30 +49,28 @@ def collect(
             client, prev_from, period_to, api.SALES_METRICS, ["sku", "day"]
         )
     except OzonAPIError as exc:
-        warnings.append(f"Аналитика продаж: {exc}")
-
-    log("2/4 Воронка и показы…")
-    funnel = None
-    last_error: OzonAPIError | None = None
-    for index, metrics_set in enumerate((api.FUNNEL_METRICS, api.FUNNEL_FALLBACK)):
-        try:
-            funnel = api.fetch_analytics_data(
-                client, prev_from, period_to, metrics_set, ["sku", "day"]
+        if exc.status in (400, 403):
+            warnings.append(
+                f"Аналитика продаж: Ozon отклонил расширенный набор метрик ({exc}); "
+                "пробую только выручку и заказы"
             )
-            if index > 0:
-                warnings.append(
-                    "Воронка: Ozon отклонил часть метрик, загружены только сессии — "
-                    "конверсия в корзину будет недоступна"
+            try:
+                rows = api.fetch_analytics_data(
+                    client, prev_from, period_to, api.SALES_FALLBACK_METRICS, ["sku", "day"]
                 )
-            break
-        except OzonAPIError as exc:
-            last_error = exc
-            if "deprecated" not in str(exc).lower():
-                break
-    if funnel is None:
-        warnings.append(f"Воронка: {last_error}")
-    else:
-        rows = _merge(rows, funnel)
+            except OzonAPIError as fallback_exc:
+                warnings.append(f"Аналитика продаж: {fallback_exc}")
+            else:
+                warnings.append(
+                    "Аналитика продаж: загружены только выручка и заказы — "
+                    "возвраты, отмены и доставка недоступны (нужен Premium Plus)"
+                )
+        else:
+            warnings.append(f"Аналитика продаж: {exc}")
+
+    # Воронку не запрашиваем: Ozon отключил session_view/hits_view/hits_tocart
+    # и отвечает HTTP 400 на весь запрос. Подробности — в ozon/api.py.
+    log("2/4 Воронка: Ozon отключил метрики воронки — пропускаю")
 
     current_rows = [r for r in rows if str(r.get("day")) >= iso_day(period_from)]
 

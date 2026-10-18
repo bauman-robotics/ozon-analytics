@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from datetime import date
+from pathlib import Path
+from unittest import mock
 
-from ozon import api, metrics, report, svgchart
+from ozon import api, demo, metrics, report, store, svgchart
+from ozon.client import OzonAPIError
 
 
 class FakeClient:
@@ -85,6 +90,38 @@ class AnalyticsDataTests(unittest.TestCase):
         self.assertEqual(len(rows), api.PAGE_LIMIT + 1)
         self.assertEqual(client.calls[1][1]["offset"], api.PAGE_LIMIT)
 
+    def test_partial_page_is_kept(self):
+        class FailSecondPageClient:
+            def __init__(self):
+                self.calls = 0
+                self.warnings = []
+
+            def post(self, path, payload=None, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "result": {
+                            "data": [
+                                {
+                                    "dimensions": [
+                                        {"id": str(i), "name": ""},
+                                        {"id": "2025-01-01", "name": ""},
+                                    ],
+                                    "metrics": [1],
+                                }
+                                for i in range(api.PAGE_LIMIT)
+                            ]
+                        }
+                    }
+                raise OzonAPIError("rate limit", status=429)
+
+        client = FailSecondPageClient()
+        rows = api.fetch_analytics_data(
+            client, date(2025, 1, 1), date(2025, 1, 2), ["revenue"], ["sku", "day"], max_pages=2
+        )
+        self.assertEqual(len(rows), api.PAGE_LIMIT)
+        self.assertTrue(any("частично" in warning for warning in client.warnings))
+
 
 class StockTests(unittest.TestCase):
     def test_aggregates_clusters(self):
@@ -104,6 +141,33 @@ class StockTests(unittest.TestCase):
         self.assertEqual(stocks[111]["transit"], 5)
         self.assertEqual(stocks[111]["idc"], 7.5)
         self.assertEqual(len(stocks[111]["clusters"]), 2)
+
+    def test_partial_stock_chunk_is_kept(self):
+        class FailSecondChunkClient:
+            def __init__(self):
+                self.calls = 0
+                self.warnings = []
+
+            def post(self, path, payload=None, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {
+                        "items": [
+                            {
+                                "sku": 111,
+                                "name": "Куртка",
+                                "offer_id": "A-1",
+                                "available_stock_count": 5,
+                            }
+                        ]
+                    }
+                raise OzonAPIError("rate limit", status=429)
+
+        client = FailSecondChunkClient()
+        stocks = api.fetch_stocks(client, [111, 222], chunk=1)
+        self.assertIn(111, stocks)
+        self.assertNotIn(222, stocks)
+        self.assertTrue(any("частично" in warning for warning in client.warnings))
 
 
 class MetricsTests(unittest.TestCase):
@@ -138,6 +202,16 @@ class MetricsTests(unittest.TestCase):
         data = metrics.build(self.snapshot())
         titles = [a["title"] for a in data["alerts"]]
         self.assertIn("Нет в наличии", titles)
+        self.assertTrue(data["sku"][0]["stock_known"])
+
+    def test_no_false_out_of_stock_without_stock_data(self):
+        snapshot = self.snapshot()
+        snapshot["stocks"] = {}
+        snapshot["turnover"] = {}
+        data = metrics.build(snapshot)
+        titles = [a["title"] for a in data["alerts"]]
+        self.assertNotIn("Нет в наличии", titles)
+        self.assertFalse(data["sku"][0]["stock_known"])
 
     def test_margin_estimate_with_costs(self):
         finance = {
@@ -199,10 +273,6 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Аналитика Ozon", html_text)
         self.assertNotIn("None", html_text)
         self.assertNotIn("демонстрационные данные", html_text)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class FinanceAccrualTests(unittest.TestCase):
@@ -281,6 +351,21 @@ class FinanceAccrualTests(unittest.TestCase):
 
 
 class NoFunnelDisplayTests(unittest.TestCase):
+    def test_returns_unavailable_shows_dash(self):
+        snapshot = {
+            "meta": {"period": {"from": "2025-01-01", "to": "2025-01-02"},
+                     "prev_period": {}, "mode": "live", "generated_at": "now"},
+            # Premium без Plus: Ozon не вернул returns
+            "rows": [{"sku": 1, "name": "Товар", "day": "2025-01-01",
+                      "revenue": 100, "ordered_units": 2}],
+            "stocks": {}, "turnover": {}, "finance": {},
+        }
+        data = metrics.build(snapshot)
+        self.assertFalse(data["has_returns"])
+        self.assertFalse(data["sku"][0]["returns_known"])
+        html_text = report.render(data)
+        self.assertIn("Доля возвратов</div><div class='value'>—</div>", html_text)
+
     def test_dashes_instead_of_zero_conversion(self):
         snapshot = {
             "meta": {"period": {"from": "2025-01-01", "to": "2025-01-02"},
@@ -292,5 +377,40 @@ class NoFunnelDisplayTests(unittest.TestCase):
             "finance": {},
         }
         html_text = report.render(metrics.build(snapshot))
-        self.assertIn("Нет данных по сессиям", html_text)
+        self.assertIn("Ozon отключил метрики воронки", html_text)
         self.assertGreaterEqual(html_text.count("—</td>"), 2)
+
+
+class CSVTests(unittest.TestCase):
+    def _data(self) -> dict:
+        return metrics.build(demo.make_snapshot(days=2, seed=5))
+
+    def test_writes_both_csvs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            written, errors = report.write_csvs(self._data(), Path(tmp))
+            self.assertEqual(errors, [])
+            self.assertEqual({p.name for p in written}, {"sku.csv", "daily.csv"})
+            header = (Path(tmp) / "sku.csv").read_text(encoding="utf-8-sig").splitlines()[0]
+            self.assertIn("stock_known", header)
+            self.assertIn("returns_known", header)
+
+    def test_permission_error_does_not_stop_other_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real_open = store.atomic_open
+
+            def fake_open(path, **kwargs):
+                if Path(path).name == "sku.csv":
+                    raise PermissionError(13, "Permission denied", str(path))
+                return real_open(path, **kwargs)
+
+            with mock.patch.object(report.store, "atomic_open", side_effect=fake_open):
+                written, errors = report.write_csvs(self._data(), Path(tmp))
+
+            self.assertEqual([p.name for p in written], ["daily.csv"])
+            self.assertEqual(len(errors), 1)
+            self.assertEqual(errors[0][0].name, "sku.csv")
+            self.assertTrue((Path(tmp) / "daily.csv").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

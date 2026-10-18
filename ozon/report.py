@@ -6,7 +6,7 @@ import csv
 import html
 from pathlib import Path
 
-from . import svgchart
+from . import store, svgchart
 from .util import fmt_int, fmt_money, fmt_pct, to_float, to_int
 
 STYLE = """
@@ -238,7 +238,15 @@ def render(data: dict) -> str:
         parts.append(_finance_panel(finance))
     if alerts:
         parts.append(_alerts_panel(alerts))
-    parts.append(_sku_panel(skus, data.get("has_costs"), data.get("has_settlement"), data.get("has_funnel")))
+    parts.append(
+        _sku_panel(
+            skus,
+            data.get("has_costs"),
+            data.get("has_settlement"),
+            data.get("has_funnel"),
+            data.get("has_returns", True),
+        )
+    )
     parts.append(
         "<footer>Данные: Ozon Seller API (/v1/analytics/data, /v1/analytics/stocks, "
         "/v1/finance/accrual/by-day). Маржа считается по фактическим начислениям на SKU; "
@@ -270,6 +278,7 @@ def _card(label: str, value: str, delta_html: str = "") -> str:
 
 def _kpi_cards(kpi: dict, prev: dict, data: dict) -> str:
     has_funnel = data.get("has_funnel")
+    has_returns = data.get("has_returns", True)
     cards = [
         _card("Выручка", fmt_money(kpi.get("revenue", 0)), _delta(kpi.get("revenue"), prev.get("revenue"))),
         _card("Заказано, шт", fmt_int(kpi.get("units", 0)), _delta(kpi.get("units"), prev.get("units"))),
@@ -286,8 +295,10 @@ def _kpi_cards(kpi: dict, prev: dict, data: dict) -> str:
         ),
         _card(
             "Доля возвратов",
-            fmt_pct(kpi.get("return_rate", 0)),
-            _delta(kpi.get("return_rate"), prev.get("return_rate"), invert=True, points=True),
+            fmt_pct(kpi.get("return_rate", 0)) if has_returns else "—",
+            _delta(kpi.get("return_rate"), prev.get("return_rate"), invert=True, points=True)
+            if has_returns
+            else "",
         ),
     ]
     return "<div class='cards'>" + "".join(cards) + "</div>"
@@ -310,8 +321,10 @@ def _charts(data: dict, daily: list[dict], skus: list[dict]) -> str:
         funnel_html = svgchart.funnel(funnel_steps)
     else:
         funnel_html = (
-            "<div class='tiny'>Нет данных по сессиям и корзинам — "
-            "проверьте роли ключа (Аналитика) и подписку Premium.</div>"
+            "<div class='tiny'>Ozon отключил метрики воронки "
+            "(<code>session_view</code>, <code>hits_view</code>, <code>hits_tocart</code>) — "
+            "сессии и конверсия в корзину больше не отдаются через API. "
+            "В демо-отчёте воронка остаётся для примера.</div>"
         )
 
     return (
@@ -411,6 +424,7 @@ def _sku_panel(
     has_costs: bool,
     has_settlement: bool = False,
     has_funnel: bool = True,
+    has_returns: bool = True,
 ) -> str:
     head = [
         "<th>ABC</th>", "<th>Товар</th>", "<th>SKU</th>", "<th>Выручка</th>",
@@ -428,8 +442,12 @@ def _sku_panel(
         name = _esc(row["name"])
         offer = _esc(row.get("offer_id") or "")
         link = f"https://www.ozon.ru/product/{to_int(row['sku'])}/"
+        stock_known = bool(row.get("stock_known", True))
+        stock_value = to_int(row["stock"])
+        stock_text = fmt_int(stock_value) if stock_known else "—"
         idc_value = to_float(row["idc"])
-        idc_text = f"{idc_value:.0f} дн." if idc_value > 0 else "—"
+        idc_text = f"{idc_value:.0f} дн." if stock_known and idc_value > 0 else "—"
+        grade = row.get("grade") if stock_known else ""
         cells = [
             f"<td data-v='{_esc(row.get('abc'))}'><span class='abc {_esc(row.get('abc'))}'>{_esc(row.get('abc'))}</span></td>",
             f"<td class='name' data-v='{name}'><a href='{link}' target='_blank' rel='noopener'>{name}</a>"
@@ -441,7 +459,7 @@ def _sku_panel(
             f"<td class='num' data-v='{to_float(row['units']):.2f}'>{fmt_int(row['units'])}</td>",
             f"<td class='num' data-v='{to_float(row['avg_price']):.2f}'>{fmt_money(row['avg_price'])}</td>",
             f"<td class='num' data-v='{to_float(row['return_rate']):.4f}'>"
-            + (f"{row['return_rate'] * 100:.1f}%" if to_float(row["units"]) else "—")
+            + (f"{row['return_rate'] * 100:.1f}%" if has_returns and to_float(row["units"]) else "—")
             + "</td>",
             f"<td class='num' data-v='{to_float(row['sessions']):.2f}'>"
             + (fmt_int(row["sessions"]) if has_funnel else "—")
@@ -449,9 +467,9 @@ def _sku_panel(
             f"<td class='num' data-v='{to_float(row['conv']):.4f}'>"
             + (f"{row['conv'] * 100:.2f}%" if has_funnel and to_float(row["sessions"]) else "—")
             + "</td>",
-            f"<td class='num' data-v='{to_int(row['stock'])}'>{fmt_int(row['stock'])}</td>",
-            f"<td class='num' data-v='{idc_value:.2f}'>{idc_text}</td>",
-            f"<td data-v='{_esc(row.get('grade'))}'>{_grade_pill(row.get('grade'))}</td>",
+            f"<td class='num' data-v='{stock_value if stock_known else -1}'>{stock_text}</td>",
+            f"<td class='num' data-v='{idc_value if stock_known else -1:.2f}'>{idc_text}</td>",
+            f"<td data-v='{_esc(grade)}'>{_grade_pill(grade)}</td>",
         ]
         if has_settlement:
             net = row.get("net_before_cost")
@@ -492,29 +510,45 @@ def _sku_panel(
     )
 
 
-def write_csvs(data: dict, out_dir: Path, suffix: str = "") -> list[Path]:
+def write_csvs(
+    data: dict,
+    out_dir: Path,
+    suffix: str = "",
+) -> tuple[list[Path], list[tuple[Path, OSError]]]:
+    """Пишет sku.csv и daily.csv, не прерывая отчёт из-за одного занятого файла.
+
+    Возвращает (сохранённые файлы, ошибки). Ошибка обычно означает, что файл
+    открыт в Excel или защищён от записи; дашборд при этом всё равно собирается.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
+    errors: list[tuple[Path, OSError]] = []
 
-    sku_path = out_dir / f"sku{suffix}.csv"
-    with sku_path.open("w", encoding="utf-8-sig", newline="") as handle:
-        fields = [
-            "sku", "offer_id", "name", "abc", "revenue", "share", "units", "avg_price",
-            "returns", "return_rate", "sessions", "conv", "stock", "idc", "grade",
-            "turnover", "margin", "margin_pct",
-        ]
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
-        writer.writeheader()
-        for row in data.get("sku") or []:
-            writer.writerow(row)
-    written.append(sku_path)
+    tables = [
+        (
+            out_dir / f"sku{suffix}.csv",
+            [
+                "sku", "offer_id", "name", "abc", "revenue", "share", "units", "avg_price",
+                "returns", "returns_known", "return_rate", "sessions", "conv", "stock",
+                "stock_known", "idc", "grade", "turnover", "margin", "margin_pct",
+            ],
+            data.get("sku") or [],
+        ),
+        (
+            out_dir / f"daily{suffix}.csv",
+            ["day", "revenue", "units", "returns", "returns_known", "sessions", "tocarts", "conv"],
+            data.get("daily") or [],
+        ),
+    ]
 
-    daily_path = out_dir / f"daily{suffix}.csv"
-    with daily_path.open("w", encoding="utf-8-sig", newline="") as handle:
-        fields = ["day", "revenue", "units", "returns", "sessions", "tocarts", "conv"]
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
-        writer.writeheader()
-        for row in data.get("daily") or []:
-            writer.writerow(row)
-    written.append(daily_path)
-    return written
+    for path, fields, rows in tables:
+        try:
+            with store.atomic_open(path, encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(rows)
+        except OSError as exc:
+            errors.append((path, exc))
+        else:
+            written.append(path)
+    return written, errors

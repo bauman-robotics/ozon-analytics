@@ -110,6 +110,15 @@ def save_prefs(prefs: dict) -> None:
         pass
 
 
+def dashboard_path(action: str = "collect_all", out_dir: Path | None = None) -> Path:
+    """Какой файл открывать: демо — только демо, сбор — live с фолбэком на демо."""
+    out_dir = out_dir or OUT_DIR
+    if action == "demo":
+        return out_dir / "dashboard-demo.html"
+    live = out_dir / "dashboard.html"
+    return live if live.exists() else out_dir / "dashboard-demo.html"
+
+
 def open_path(path: Path) -> None:
     if os.name == "nt":
         os.startfile(str(path))  # type: ignore[attr-defined]
@@ -424,25 +433,26 @@ def main() -> int:
             if code == 0:
                 self.append_log("Готово.", "ok")
                 if action in ("collect_all", "demo") and self.browser_var.get():
-                    self.open_dashboard()
+                    self.open_dashboard(action)
                 elif action == "calc":
                     self.open_calculator()
             elif code == 2:
-                self.append_log("Ошибка: не настроены ключи — нажмите «Настроить .env»", "error")
+                self.append_log(
+                    "Ошибка: нет ключа или снимка данных — проверьте .env и сначала выполните сбор.",
+                    "error",
+                )
                 messagebox.showwarning(
-                    "Нет ключа",
-                    "Не найден OZON_CLIENT_ID или OZON_API_KEY.\n"
-                    "Нажмите «Настроить .env» и впишите значения.",
+                    "Не хватает данных",
+                    "Нет ключа OZON_CLIENT_ID/OZON_API_KEY или файла data/snapshot.json.\n"
+                    "Нажмите «Настроить .env» и сначала соберите данные.",
                 )
             else:
                 self.append_log("Ошибка — подробности в логе выше", "error")
                 messagebox.showerror("Ошибка", "Команда завершилась с ошибкой.\nПодробности — в окне лога.")
 
         # --- открытие файлов ---------------------------------------------
-        def open_dashboard(self) -> None:
-            path = OUT_DIR / "dashboard.html"
-            if not path.exists():
-                path = OUT_DIR / "dashboard-demo.html"
+        def open_dashboard(self, action: str = "collect_all") -> None:
+            path = dashboard_path(action)
             if not path.exists():
                 messagebox.showinfo("Дашборд", "Отчёта ещё нет. Сначала соберите данные.")
                 return
