@@ -100,6 +100,38 @@ py run.py all --days 30
 schtasks /create /tn "OzonAnalytics" /tr "C:\ozon-analytics\run.bat all --days 30" /sc daily /st 09:00
 ```
 
+## Ubuntu / Linux
+
+В корне лежат два bash-скрипта:
+
+```bash
+chmod +x run.sh run_demo.sh   # один раз, если права не сохранились
+
+./run_demo.sh                 # демо без ключа, откроет браузер
+./run_demo.sh --days 7        # демо за 7 дней
+./run_demo.sh --no-open       # не открывать браузер
+
+cp .env.example .env
+nano .env                     # OZON_CLIENT_ID, OZON_API_KEY
+./run.sh check                # проверить ключ и роли
+./run.sh all --days 30        # собрать live-отчёт
+./run.sh report               # пересобрать отчёт из снимка
+./run.sh serve --port 8765    # локальный сервер
+```
+
+`run.sh` сам находит Python 3.10+ (`python3`, `python3.13`, `python3.12`, …),
+переходит в папку проекта и передаёт все аргументы в `run.py`. Без аргументов
+он собирает live-отчёт за 30 дней, если есть `.env`; если `.env` нет — показывает
+подсказку. Если Python установлен под нестандартным именем:
+
+```bash
+PYTHON=python3.12 ./run.sh check
+```
+
+`run_demo.sh` — обёртка над `./run.sh demo`: собирает `out/dashboard-demo.html`
+и открывает его через `xdg-open`, если есть графическая сессия. Флаг `--no-open`
+отключает автооткрытие (полезно на сервере и в CI).
+
 ## Графический интерфейс (Windows)
 
 ![Окно Ozon Analytics](docs/gui-dark.png)
@@ -430,6 +462,8 @@ py run.py calc --demo          # посмотреть без данных
 ozon-analytics/
 ├── run.py                # CLI
 ├── gui.py                # графический интерфейс (Tkinter)
+├── run.sh                # запуск на Ubuntu/Linux
+├── run_demo.sh           # демо-режим на Ubuntu/Linux
 ├── Changelog.md          # история изменений
 ├── PROBLEMS.md           # разбор проблем и логи ошибок
 ├── run_gui.bat           # запуск окна без консоли
