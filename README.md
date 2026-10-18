@@ -54,6 +54,24 @@ py run.py all --days 30
 
 Файлы `data/` и `out/` создаются автоматически.
 
+## Как это выглядит
+
+Демо-данные, тёмная тема:
+
+![Дашборд: KPI, выручка и топ товаров](docs/dashboard-demo-1.png)
+
+![Дашборд: заказы, финансы и алерты](docs/dashboard-demo-2.png)
+
+![Дашборд: таблица товаров](docs/dashboard-demo-3.png)
+
+Калькулятор прибыли:
+
+![Калькулятор прибыли](docs/calculator-demo.png)
+
+> Скриншоты синтетические: они собраны из демо-данных скриптом
+> [`scripts/make_screenshots.py`](scripts/make_screenshots.py). Реальные продажи
+> и ключ Ozon не используются. Пересобрать: раздел «Скриншоты для документации».
+
 ## Windows
 
 1. Установите **Python 3.10+** с [python.org](https://www.python.org/downloads/), отметив галочку
@@ -484,6 +502,10 @@ ozon-analytics/
 │   └── util.py           # форматирование
 ├── tests/test_analytics.py
 ├── tests/test_client.py  # лимиты методов и ретраи
+├── scripts/
+│   ├── make_screenshots.py          # синтетические скриншоты для README
+│   └── requirements-screenshots.txt # Playwright (только для скриншотов)
+├── docs/                 # gui-dark.png и скриншоты демо-отчёта
 ├── data/                 # снимки (в .gitignore)
 └── out/                  # dashboard.html и sku.csv/daily.csv (live)
                           # dashboard-demo.html и *-demo.csv (демо)
@@ -500,6 +522,27 @@ py -m unittest discover -s tests -v
 разделение издержек в калькуляторе, границы периода сбора, сборка команд GUI,
 запись CSV при занятом файле, отказ от deprecated-метрик воронки, лимит
 `/v1/analytics/data` и отсутствие ложных алертов «нет в наличии» без данных об остатках.
+
+## Скриншоты для документации
+
+Скриншоты в README синтетические: они собираются из демо-данных, реальные продажи
+и ключ Ozon не используются. Для пересборки нужен Playwright (только для документации,
+сам проект по-прежнему без зависимостей):
+
+```bash
+python3 -m pip install -r scripts/requirements-screenshots.txt
+python3 -m playwright install chromium
+python3 scripts/make_screenshots.py
+```
+
+Скрипт собирает `out/dashboard-demo.html` и `out/calculator.html` и сохраняет
+`docs/dashboard-demo-1.png`, `docs/dashboard-demo-2.png`, `docs/dashboard-demo-3.png`
+и `docs/calculator-demo.png`. Если Chromium уже установлен в системе, путь можно
+указать явно:
+
+```bash
+CHROMIUM_PATH=/usr/bin/chromium python3 scripts/make_screenshots.py
+```
 
 ## Идеи для следующих шагов
 

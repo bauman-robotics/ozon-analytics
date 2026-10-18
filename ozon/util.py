@@ -46,6 +46,11 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def utc_today() -> date:
+    """Текущая дата в UTC: Ozon считает аналитику в UTC, не в локальной зоне."""
+    return utc_now().date()
+
+
 def utc_now_iso() -> str:
     return utc_now().strftime("%Y-%m-%d %H:%M:%S UTC")
 

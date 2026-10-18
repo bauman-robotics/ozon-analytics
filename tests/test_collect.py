@@ -10,6 +10,7 @@ from ozon import api
 from ozon import collect as collector
 from ozon.client import OzonAPIError
 from ozon.config import Settings
+from ozon.util import utc_today
 
 
 class FakeClient:
@@ -52,12 +53,12 @@ class CollectPeriodTests(unittest.TestCase):
 
     def test_period_ends_yesterday_by_default(self):
         snapshot = self._collect()
-        expected = (date.today() - timedelta(days=1)).isoformat()
+        expected = (utc_today() - timedelta(days=1)).isoformat()
         self.assertEqual(snapshot["meta"]["period"]["to"], expected)
 
     def test_include_today_flag(self):
         snapshot = self._collect(include_today=True)
-        self.assertEqual(snapshot["meta"]["period"]["to"], date.today().isoformat())
+        self.assertEqual(snapshot["meta"]["period"]["to"], utc_today().isoformat())
 
     def test_period_length(self):
         snapshot = self._collect()

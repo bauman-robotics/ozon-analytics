@@ -1,0 +1,3 @@
+# Только для scripts/make_screenshots.py.
+# Для работы самого проекта зависимости не нужны.
+playwright>=1.40

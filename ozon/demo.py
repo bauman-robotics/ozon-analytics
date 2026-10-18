@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import random
-from datetime import date, timedelta
+from datetime import timedelta
 
-from .util import iso_day, utc_now_iso
+from .util import iso_day, utc_now_iso, utc_today
 
 NAMES = [
     "Куртка зимняя женская с капюшоном",
@@ -38,7 +38,7 @@ NAMES = [
 
 def make_snapshot(days: int = 30, seed: int = 42) -> dict:
     rng = random.Random(seed)
-    today = date.today()
+    today = utc_today()
     period_to = today
     period_from = today - timedelta(days=days - 1)
     prev_to = period_from - timedelta(days=1)

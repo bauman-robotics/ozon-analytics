@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Callable
 
 from . import api, finance as finance_api
 from .client import OzonAPIError, OzonClient
 from .config import Settings
-from .util import iso_day, to_int, utc_now_iso
+from .util import iso_day, to_int, utc_now_iso, utc_today
 
 
 def collect(
@@ -32,7 +32,7 @@ def collect(
         rps=settings.rps,
     )
     warnings: list[str] = []
-    today = date.today()
+    today = utc_today()
     # Данные за сегодня всегда неполные (аналитика обновляется 2 раза в сутки),
     # поэтому по умолчанию берём период по вчерашний день.
     period_to = today if include_today else today - timedelta(days=1)
