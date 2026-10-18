@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import gui
 from ozon.config import Settings
@@ -34,6 +36,22 @@ class CommandTests(unittest.TestCase):
     def test_python_is_not_windowed(self):
         exe = Path(gui.python_exe())
         self.assertNotIn(exe.name.lower(), {"pythonw.exe", "pythonw"})
+
+
+class BrowserTests(unittest.TestCase):
+    def test_open_in_browser_prefers_known_browser(self):
+        process = mock.Mock()
+        process.wait.side_effect = subprocess.TimeoutExpired("firefox", 0.5)
+        which = lambda name: "/usr/bin/firefox" if name == "firefox" else None
+        with mock.patch.object(gui.shutil, "which", side_effect=which), \
+                mock.patch.object(gui.subprocess, "Popen", return_value=process) as popen:
+            gui.open_in_browser(Path("/tmp/dashboard.html"))
+
+        popen.assert_called_once()
+        command = popen.call_args.args[0]
+        self.assertEqual(command[0], "/usr/bin/firefox")
+        self.assertTrue(command[1].startswith("file://"))
+        self.assertTrue(command[1].endswith("dashboard.html"))
 
 
 class DashboardPathTests(unittest.TestCase):

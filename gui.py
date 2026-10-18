@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shlex
 import shutil
 import subprocess
 import sys
@@ -60,10 +61,10 @@ THEMES = {
 }
 
 ACTIONS = {
-    "collect_all": "Собрать и открыть дашборд",
+    "collect_all": "Собрать live-дашборд",
     "report": "Пересобрать отчёт",
     "calc": "Калькулятор прибыли",
-    "demo": "Демо-дашборд",
+    "demo": "Демо-дашборд (без ключа)",
     "check": "Проверить ключ",
 }
 
@@ -103,7 +104,10 @@ def mask(value: str, keep: int = 4) -> str:
 def status_text(settings: Settings, env_path: Path = DEFAULT_ENV) -> str:
     if not settings.configured:
         where = "найден" if env_path.exists() else "не найден"
-        return f"Ключ не настроен ({env_path.name} {where}) — нажмите «Настроить .env»"
+        return (
+            f"Ключ не настроен ({env_path.name} {where}) — live-данные недоступны; "
+            "демо работает без ключа"
+        )
     return (
         f"Ключ: {mask(settings.client_id)} · .env: {'найден' if env_path.exists() else 'нет'} · "
         f"Python {sys.version.split()[0]}"
@@ -134,8 +138,71 @@ def dashboard_path(action: str = "collect_all", out_dir: Path | None = None) -> 
     return live if live.exists() else out_dir / "dashboard-demo.html"
 
 
-def open_path(path: Path) -> None:
+_BROWSER_NAMES = (
+    "firefox",
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "brave-browser",
+    "microsoft-edge",
+    "epiphany",
+)
+
+
+def _browser_commands() -> list[list[str]]:
+    commands: list[list[str]] = []
+    env_browser = os.environ.get("BROWSER")
+    if env_browser:
+        try:
+            commands.append(shlex.split(env_browser))
+        except ValueError:
+            pass
+    for name in _BROWSER_NAMES:
+        executable = shutil.which(name)
+        if executable:
+            commands.append([executable])
+    return commands
+
+
+def open_in_browser(path: Path) -> None:
+    """Открывает HTML именно в браузере, не полагаясь на MIME-ассоциацию text/html.
+
+    На Ubuntu `xdg-open` может быть настроен на редактор, поэтому сначала
+    пробуем известные браузеры, а `xdg-open` оставляем запасным вариантом.
+    """
+    uri = path.resolve().as_uri()
+    for command in _browser_commands():
+        try:
+            process = subprocess.Popen(
+                command + [uri],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            continue
+        try:
+            code = process.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            return
+        if code == 0:
+            return
+
+    if shutil.which("xdg-open"):
+        subprocess.Popen(
+            ["xdg-open", uri],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    raise OSError(f"Не удалось найти браузер. Откройте вручную: {uri}")
+
+
+def open_path(path: Path, *, browser: bool = False) -> None:
     """Открывает файл/папку системным приложением. Бросает OSError при ошибке."""
+    if browser and os.name != "nt" and sys.platform != "darwin":
+        open_in_browser(path)
+        return
     if os.name == "nt":
         os.startfile(str(path))  # type: ignore[attr-defined]
     elif sys.platform == "darwin":
@@ -218,8 +285,13 @@ def main() -> int:
             self.append_log("Готово к работе. Выберите действие сверху.", "muted")
             if not Settings.from_env().configured:
                 self.append_log(
-                    "Ключ не найден. Нажмите «Настроить .env» и впишите OZON_CLIENT_ID и OZON_API_KEY.",
+                    "Ключ не найден. Live-данные недоступны, но демо работает без ключа — "
+                    "нажмите «Демо-дашборд (без ключа)».",
                     "error",
+                )
+                self.append_log(
+                    "Ключ можно добавить позже через «Настроить .env».",
+                    "muted",
                 )
             root.after(120, self.poll)
             root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -273,10 +345,10 @@ def main() -> int:
                 return btn
 
             button(box, ACTIONS["collect_all"], lambda: self.run_action("collect_all"), accent=True, col=0, span=2)
-            button(box, ACTIONS["check"], lambda: self.run_action("check"), col=2)
+            button(box, ACTIONS["demo"], lambda: self.run_action("demo"), col=2)
             button(box, ACTIONS["report"], lambda: self.run_action("report"), col=0, row=1)
             button(box, ACTIONS["calc"], lambda: self.run_action("calc"), col=1, row=1)
-            button(box, ACTIONS["demo"], lambda: self.run_action("demo"), col=2, row=1)
+            button(box, ACTIONS["check"], lambda: self.run_action("check"), col=2, row=1)
             button(box, "Открыть дашборд", self.open_dashboard, col=0, row=2)
             button(box, "Открыть папку out", lambda: self.open_folder(OUT_DIR), col=1, row=2)
             button(box, "Очистить лог", self.clear_log, col=2, row=2)
@@ -407,6 +479,20 @@ def main() -> int:
         def run_action(self, action: str) -> None:
             if self.busy:
                 return
+            if action == "collect_all" and not Settings.from_env().configured:
+                if messagebox.askyesno(
+                    "Для live-данных нужен ключ",
+                    "OZON_CLIENT_ID и OZON_API_KEY не настроены.\n\n"
+                    "Запустить демо-дашборд без ключа?",
+                ):
+                    action = "demo"
+                else:
+                    self.append_log(
+                        "Live-сбор отменён. Добавьте ключ через «Настроить .env» "
+                        "или нажмите «Демо-дашборд (без ключа)».",
+                        "muted",
+                    )
+                    return
             try:
                 days = max(1, int(self.days_var.get()))
             except ValueError:
@@ -452,44 +538,66 @@ def main() -> int:
             self.refresh_status()
             if code == 0:
                 self.append_log("Готово.", "ok")
-                if action in ("collect_all", "demo") and self.browser_var.get():
-                    self.open_dashboard(action)
+                if action in ("collect_all", "demo"):
+                    if self.browser_var.get():
+                        self.open_dashboard(action)
+                    else:
+                        self.append_log(
+                            "Браузер не открываю: снята галочка «открывать браузер».",
+                            "muted",
+                        )
                 elif action == "calc":
-                    self.open_calculator()
+                    if self.browser_var.get():
+                        self.open_calculator()
+                    else:
+                        self.append_log(
+                            "Калькулятор готов: out/calculator.html "
+                            "(галочка «открывать браузер» снята).",
+                            "muted",
+                        )
             elif code == 2:
                 self.append_log(
-                    "Ошибка: нет ключа или снимка данных — проверьте .env и сначала выполните сбор.",
+                    "Ошибка: для live-данных нужен ключ или снимок. "
+                    "Демо работает без ключа — нажмите «Демо-дашборд (без ключа)».",
                     "error",
                 )
                 messagebox.showwarning(
                     "Не хватает данных",
-                    "Нет ключа OZON_CLIENT_ID/OZON_API_KEY или файла data/snapshot.json.\n"
-                    "Нажмите «Настроить .env» и сначала соберите данные.",
+                    "Для live-данных нужен OZON_CLIENT_ID/OZON_API_KEY "
+                    "или файл data/snapshot.json.\n\n"
+                    "Посмотреть демо без ключа: «Демо-дашборд (без ключа)».\n"
+                    "Добавить ключ: «Настроить .env».",
                 )
             else:
                 self.append_log("Ошибка — подробности в логе выше", "error")
                 messagebox.showerror("Ошибка", "Команда завершилась с ошибкой.\nПодробности — в окне лога.")
 
         # --- открытие файлов ---------------------------------------------
-        def _open(self, path: Path, title: str = "Файл") -> None:
+        def _open(self, path: Path, title: str = "Файл", *, browser: bool = False) -> None:
             try:
-                open_path(path)
+                open_path(path, browser=browser)
             except OSError as exc:
                 messagebox.showerror(title, f"Не удалось открыть {path}:\n{exc}")
 
         def open_dashboard(self, action: str = "collect_all") -> None:
             path = dashboard_path(action)
             if not path.exists():
-                messagebox.showinfo("Дашборд", "Отчёта ещё нет. Сначала соберите данные.")
+                messagebox.showinfo(
+                    "Дашборд",
+                    "Отчёта ещё нет. Нажмите «Демо-дашборд (без ключа)» "
+                    "или соберите live-данные.",
+                )
                 return
-            self._open(path, "Дашборд")
+            self.append_log(f"Дашборд: {path}", "muted")
+            self._open(path, "Дашборд", browser=True)
 
         def open_calculator(self) -> None:
             path = OUT_DIR / "calculator.html"
             if not path.exists():
                 messagebox.showinfo("Калькулятор", "Сначала нажмите «Калькулятор прибыли».")
                 return
-            self._open(path, "Калькулятор")
+            self.append_log(f"Калькулятор: {path}", "muted")
+            self._open(path, "Калькулятор", browser=True)
 
         def open_folder(self, folder: Path) -> None:
             folder.mkdir(parents=True, exist_ok=True)
