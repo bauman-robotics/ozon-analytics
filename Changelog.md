@@ -66,11 +66,19 @@
   `docs/dashboard-demo-1.png`, `docs/dashboard-demo-2.png`,
   `docs/dashboard-demo-3.png`, `docs/calculator-demo.png`.
   Реальные продажи и ключ Ozon не используются.
+- `run_gui.sh` — запуск графического интерфейса на Ubuntu/Linux:
+  проверяет Python 3.10+, Tkinter и графическую сессию.
+- `install_desktop.sh` и `docs/ozon-analytics.svg` — ярлык
+  **Ozon Analytics** в меню приложений Ubuntu/GNOME.
 
 ### Изменено
 
 - `README.md`: обновлены разделы «Воронка», «Ограничения», таблица ошибок,
   описание подписки Premium / Premium Plus и лимитов Ozon.
+- `gui.py` стал кросс-платформенным: на Linux используются шрифты
+  DejaVu Sans / DejaVu Sans Mono, проверяется наличие Tkinter,
+  `xdg-open` и графической сессии, ошибки открытия файлов показываются
+  в окне, а не в консоли.
 - `run.py report` и `run.py demo` больше не показывают traceback при
   ошибках записи файлов и возвращают понятный код выхода.
 - Запись снимка и `calculator.html` также переведена на атомарную запись.

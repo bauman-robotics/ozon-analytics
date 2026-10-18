@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Простой графический интерфейс для Windows (Tkinter, без зависимостей).
+"""Простой графический интерфейс (Tkinter, без внешних зависимостей).
 
-Запуск: двойной клик по run_gui.bat или `pyw gui.py`.
+Запуск:
+  • Windows: двойной клик по run_gui.bat или `pyw gui.py`;
+  • Ubuntu/Linux: ./run_gui.sh или `python3 gui.py`.
+
 Интерфейс ничего не считает — он запускает команды run.py и показывает лог.
 Тёмная тема по умолчанию, переключатель — в правом верхнем углу.
 """
@@ -11,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -26,6 +30,17 @@ OUT_DIR = ROOT / "out"
 DATA_DIR = ROOT / "data"
 PREFS_FILE = DATA_DIR / "gui_prefs.json"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+# Шрифты, которые точно есть в системе по умолчанию
+if os.name == "nt":
+    UI_FONT = "Segoe UI"
+    MONO_FONT = "Consolas"
+elif sys.platform == "darwin":
+    UI_FONT = "Helvetica Neue"
+    MONO_FONT = "Menlo"
+else:
+    UI_FONT = "DejaVu Sans"
+    MONO_FONT = "DejaVu Sans Mono"
 
 THEMES = {
     "dark": {
@@ -120,11 +135,14 @@ def dashboard_path(action: str = "collect_all", out_dir: Path | None = None) -> 
 
 
 def open_path(path: Path) -> None:
+    """Открывает файл/папку системным приложением. Бросает OSError при ошибке."""
     if os.name == "nt":
         os.startfile(str(path))  # type: ignore[attr-defined]
     elif sys.platform == "darwin":
         subprocess.Popen(["open", str(path)])
     else:
+        if not shutil.which("xdg-open"):
+            raise OSError("xdg-open не найден. Установите: sudo apt install -y xdg-utils")
         subprocess.Popen(["xdg-open", str(path)])
 
 
@@ -162,6 +180,8 @@ def main() -> int:
         from tkinter import messagebox, scrolledtext, ttk
     except Exception as exc:  # noqa: BLE001
         print(f"Tkinter недоступен: {exc}")
+        if os.name != "nt":
+            print("Ubuntu/Debian: sudo apt install -y python3-tk")
         return 1
 
     if os.name == "nt":
@@ -215,9 +235,9 @@ def main() -> int:
             left = tk.Frame(header, bg=p["card"])
             left.pack(side="left", fill="x", expand=True)
             tk.Label(left, text="Ozon Analytics", bg=p["card"], fg=p["text"],
-                     font=("Segoe UI", 17, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(12, 0))
+                     font=(UI_FONT, 17, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(12, 0))
             tk.Label(left, text="Сбор статистики, дашборд и калькулятор прибыли — в одном окне",
-                     bg=p["card"], fg=p["muted"], font=("Segoe UI", 9), anchor="w").pack(anchor="w", padx=16, pady=(2, 12))
+                     bg=p["card"], fg=p["muted"], font=(UI_FONT, 9), anchor="w").pack(anchor="w", padx=16, pady=(2, 12))
 
             right = tk.Frame(header, bg=p["card"])
             right.pack(side="right", padx=14, pady=14)
@@ -226,13 +246,13 @@ def main() -> int:
                 right, text=label, command=self.toggle_theme, bg=p["button"], fg=p["text"],
                 activebackground=p["button_hover"], activeforeground=p["text"],
                 relief="flat", bd=0, highlightthickness=1, highlightbackground=p["border"],
-                font=("Segoe UI", 9), padx=12, pady=6, cursor="hand2",
+                font=(UI_FONT, 9), padx=12, pady=6, cursor="hand2",
             )
             self.theme_btn.pack()
 
             box = tk.LabelFrame(
                 self.root, text=" Действия ", bg=p["bg"], fg=p["muted"],
-                font=("Segoe UI", 9), bd=1, relief="solid", highlightthickness=0,
+                font=(UI_FONT, 9), bd=1, relief="solid", highlightthickness=0,
             )
             box.pack(fill="x", padx=14, pady=(0, 10))
             box.columnconfigure((0, 1, 2), weight=1)
@@ -245,7 +265,7 @@ def main() -> int:
                     activebackground=p["accent_hover"] if accent else p["button_hover"],
                     activeforeground="#ffffff" if accent else p["text"],
                     relief="flat", bd=0, highlightthickness=1, highlightbackground=p["border"],
-                    font=("Segoe UI", 9, "bold" if accent else "normal"),
+                    font=(UI_FONT, 9, "bold" if accent else "normal"),
                     padx=12, pady=8, cursor="hand2",
                 )
                 btn.grid(row=row, column=col, columnspan=span, sticky="ew", padx=6, pady=5)
@@ -265,25 +285,25 @@ def main() -> int:
             settings.grid(row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 8))
 
             tk.Label(settings, text="Период, дней:", bg=p["bg"], fg=p["text"],
-                     font=("Segoe UI", 9)).pack(side="left")
+                     font=(UI_FONT, 9)).pack(side="left")
             self.spin = tk.Spinbox(
                 settings, from_=1, to=365, width=5, textvariable=self.days_var,
                 bg=p["input"], fg=p["text"], insertbackground=p["text"],
                 buttonbackground=p["button"], relief="flat", bd=0,
                 highlightthickness=1, highlightbackground=p["border"], justify="center",
-                font=("Segoe UI", 9),
+                font=(UI_FONT, 9),
             )
             self.spin.pack(side="left", padx=(6, 14))
 
             tk.Checkbutton(
                 settings, text="открывать браузер", variable=self.browser_var,
                 bg=p["bg"], fg=p["text"], activebackground=p["bg"], activeforeground=p["text"],
-                selectcolor=p["input"], font=("Segoe UI", 9), bd=0, highlightthickness=0,
+                selectcolor=p["input"], font=(UI_FONT, 9), bd=0, highlightthickness=0,
             ).pack(side="left", padx=(0, 12))
             tk.Checkbutton(
                 settings, text="включая сегодня", variable=self.today_var,
                 bg=p["bg"], fg=p["text"], activebackground=p["bg"], activeforeground=p["text"],
-                selectcolor=p["input"], font=("Segoe UI", 9), bd=0, highlightthickness=0,
+                selectcolor=p["input"], font=(UI_FONT, 9), bd=0, highlightthickness=0,
             ).pack(side="left")
 
             for text, command in (("Настроить .env", self.edit_env), ("Себестоимость", self.edit_costs)):
@@ -291,7 +311,7 @@ def main() -> int:
                     settings, text=text, command=command, bg=p["button"], fg=p["text"],
                     activebackground=p["button_hover"], activeforeground=p["text"],
                     relief="flat", bd=0, highlightthickness=1, highlightbackground=p["border"],
-                    font=("Segoe UI", 9), padx=10, pady=5, cursor="hand2",
+                    font=(UI_FONT, 9), padx=10, pady=5, cursor="hand2",
                 ).pack(side="right", padx=(8, 0))
 
             bottom = tk.Frame(self.root, bg=p["bg"])
@@ -310,7 +330,7 @@ def main() -> int:
                                             style="P.Horizontal.TProgressbar")
             self.progress.pack(side="left")
             self.status = tk.Label(bottom, text="", bg=p["bg"], fg=p["muted"],
-                                   font=("Segoe UI", 9), anchor="w")
+                                   font=(UI_FONT, 9), anchor="w")
             self.status.pack(side="left", fill="x", expand=True, padx=12)
 
             wrap = tk.Frame(self.root, bg=p["bg"])
@@ -319,7 +339,7 @@ def main() -> int:
                 wrap, bg=p["log_bg"], fg=p["log_fg"], insertbackground=p["log_fg"],
                 selectbackground=p["select"], selectforeground=p["text"],
                 relief="flat", bd=0, highlightthickness=1, highlightbackground=p["border"],
-                font=("Consolas", 9), wrap="word", state="disabled", padx=10, pady=8, height=8,
+                font=(MONO_FONT, 9), wrap="word", state="disabled", padx=10, pady=8, height=8,
             )
             self.log.pack(fill="both", expand=True)
             self.log.tag_configure("error", foreground=p["error"])
@@ -451,23 +471,29 @@ def main() -> int:
                 messagebox.showerror("Ошибка", "Команда завершилась с ошибкой.\nПодробности — в окне лога.")
 
         # --- открытие файлов ---------------------------------------------
+        def _open(self, path: Path, title: str = "Файл") -> None:
+            try:
+                open_path(path)
+            except OSError as exc:
+                messagebox.showerror(title, f"Не удалось открыть {path}:\n{exc}")
+
         def open_dashboard(self, action: str = "collect_all") -> None:
             path = dashboard_path(action)
             if not path.exists():
                 messagebox.showinfo("Дашборд", "Отчёта ещё нет. Сначала соберите данные.")
                 return
-            open_path(path)
+            self._open(path, "Дашборд")
 
         def open_calculator(self) -> None:
             path = OUT_DIR / "calculator.html"
             if not path.exists():
                 messagebox.showinfo("Калькулятор", "Сначала нажмите «Калькулятор прибыли».")
                 return
-            open_path(path)
+            self._open(path, "Калькулятор")
 
         def open_folder(self, folder: Path) -> None:
             folder.mkdir(parents=True, exist_ok=True)
-            open_path(folder)
+            self._open(folder, "Папка")
 
         def edit_env(self) -> None:
             if not DEFAULT_ENV.exists():
@@ -486,14 +512,14 @@ def main() -> int:
             self._notepad(costs, "Формат: sku,offer_id,cost. Достаточно одного из ключей.")
 
         def _notepad(self, path: Path, hint: str) -> None:
-            try:
-                self.append_log(hint, "muted")
-                if os.name == "nt":
+            self.append_log(hint, "muted")
+            if os.name == "nt":
+                try:
                     subprocess.run(["notepad.exe", str(path)], check=False)
-                else:
-                    open_path(path)
-            except OSError as exc:
-                messagebox.showerror("Файл", f"Не удалось открыть {path}: {exc}")
+                except OSError as exc:
+                    messagebox.showerror("Файл", f"Не удалось открыть {path}: {exc}")
+            else:
+                self._open(path, "Файл")
 
         def on_close(self) -> None:
             if self.busy and not messagebox.askokcancel(
@@ -502,7 +528,14 @@ def main() -> int:
                 return
             self.root.destroy()
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except Exception as exc:  # noqa: BLE001 - например, нет DISPLAY
+        print(f"Не удалось открыть графическое окно: {exc}")
+        if os.name != "nt":
+            print("Нужна графическая сессия X11/XWayland (переменная DISPLAY).")
+        return 1
+
     App(root)
     root.mainloop()
     return 0
@@ -515,6 +548,7 @@ def self_test() -> int:
     for action in ACTIONS:
         print(f"{action:12s} -> {' '.join(build_command(action, 14, True)[2:])}")
     print("status:", status_text(settings))
+    print("шрифты:", UI_FONT, "/", MONO_FONT)
     print("темы:", ", ".join(THEMES), "| по умолчанию: dark")
     return 0
 
