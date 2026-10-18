@@ -2,12 +2,13 @@
 # Добавляет ярлык «Ozon Analytics» в меню приложений Ubuntu/GNOME.
 #
 # Запуск:
-#   ./install_desktop.sh
+#   ./linux/install_desktop.sh
 #
 # После этого приложение можно найти в меню приложений по имени Ozon Analytics.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 DESKTOP_FILE="$APP_DIR/ozon-analytics.desktop"
 
@@ -26,8 +27,8 @@ Name=Ozon Analytics
 GenericName=Ozon Analytics
 Comment=Аналитика Ozon Seller API: дашборд и калькулятор прибыли
 Exec="$SCRIPT_DIR/run_gui.sh"
-Path=$SCRIPT_DIR
-Icon=$SCRIPT_DIR/docs/ozon-analytics.svg
+Path=$ROOT_DIR
+Icon=$ROOT_DIR/docs/ozon-analytics.svg
 Terminal=false
 Categories=Office;Finance;
 Keywords=ozon;analytics;dashboard;калькулятор;

@@ -6,11 +6,12 @@
 #   sudo apt update && sudo apt install -y python3-tk xdg-utils
 #
 # Запуск:
-#   ./run_gui.sh
+#   ./linux/run_gui.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
 
 die() {
     printf 'Ошибка: %s\n' "$*" >&2
@@ -50,7 +51,7 @@ EOF
 fi
 
 command -v "$PYTHON_BIN" >/dev/null 2>&1 || die "интерпретатор не найден: $PYTHON_BIN"
-[[ -f gui.py ]] || die "рядом со скриптом нет gui.py"
+[[ -f gui.py ]] || die "в корне проекта нет gui.py"
 
 if ! "$PYTHON_BIN" -c 'import tkinter' >/dev/null 2>&1; then
     cat >&2 <<'EOF'
@@ -73,8 +74,8 @@ if [[ -z "${DISPLAY:-}" ]]; then
 Tkinter на Ubuntu работает через X11/XWayland. Запустите скрипт из терминала
 Ubuntu Desktop (не по SSH без X11-форвардинга). В headless-среде используйте
 командный интерфейс:
-  ./run.sh check
-  ./run.sh all --days 30
+  ./linux/run.sh check
+  ./linux/run.sh all --days 30
 EOF
     exit 1
 fi

@@ -2,12 +2,13 @@
 chcp 65001 >nul
 setlocal
 
-rem Переходим в папку скрипта. pushd, а не cd: работает и для сетевых путей.
-pushd "%~dp0" 2>nul
+rem Переходим в корень проекта (на уровень выше папки windows).
+rem pushd, а не cd: работает и для сетевых путей.
+pushd "%~dp0.." 2>nul
 if errorlevel 1 (
     echo.
-    echo Не удалось открыть папку проекта: %~dp0
-    echo Запустите run.bat из локальной папки на диске.
+    echo Не удалось открыть папку проекта: %~dp0..
+    echo Запустите windows\run.bat из локальной папки на диске.
     echo.
     pause
     exit /b 1
@@ -36,7 +37,7 @@ if not defined PY (
 )
 
 set "PYTHONIOENCODING=utf-8"
-set "DASH=%~dp0out\dashboard-demo.html"
+set "DASH=%~dp0..\out\dashboard-demo.html"
 
 if "%~1"=="" (
     echo Запускаю демо-дашборд ^(ключ не нужен^)...

@@ -5,13 +5,14 @@
 # графическая сессия, открывает его в браузере. Ключ API не нужен.
 #
 # Примеры:
-#   ./run_demo.sh
-#   ./run_demo.sh --days 7
-#   ./run_demo.sh --no-open      # не открывать браузер
+#   ./linux/run_demo.sh
+#   ./linux/run_demo.sh --days 7
+#   ./linux/run_demo.sh --no-open      # не открывать браузер
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
 
 open_browser=1
 demo_args=()
@@ -29,7 +30,7 @@ else
 fi
 
 if [[ $status -eq 0 ]]; then
-    dashboard="$SCRIPT_DIR/out/dashboard-demo.html"
+    dashboard="$ROOT_DIR/out/dashboard-demo.html"
     echo
     if [[ -f "$dashboard" ]]; then
         echo "Демо-дашборд: $dashboard"

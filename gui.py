@@ -2,8 +2,8 @@
 """Простой графический интерфейс (Tkinter, без внешних зависимостей).
 
 Запуск:
-  • Windows: двойной клик по run_gui.bat или `pyw gui.py`;
-  • Ubuntu/Linux: ./run_gui.sh или `python3 gui.py`.
+  • Windows: двойной клик по windows/run_gui.bat или `pyw gui.py`;
+  • Ubuntu/Linux: ./linux/run_gui.sh или `python3 gui.py`.
 
 Интерфейс ничего не считает — он запускает команды run.py и показывает лог.
 Тёмная тема по умолчанию, переключатель — в правом верхнем углу.

@@ -55,10 +55,10 @@
 - Тесты на занятый CSV, отсутствие ложных алертов, fallback метрик,
   лимиты методов, частичную пагинацию и выбор дашборда в GUI
   (`tests/test_client.py`, `tests/test_analytics.py`, `tests/test_collect.py`).
-- `run.sh` — запуск на Ubuntu/Linux: сам находит Python 3.10+, переходит
+- `linux/run.sh` — запуск на Ubuntu/Linux: сам находит Python 3.10+, переходит
   в папку проекта и передаёт аргументы в `run.py`. Без аргументов собирает
   live-отчёт за 30 дней, если есть `.env`.
-- `run_demo.sh` — демо-режим без ключа: собирает `out/dashboard-demo.html`
+- `linux/run_demo.sh` — демо-режим без ключа: собирает `out/dashboard-demo.html`
   и открывает его через `xdg-open`, если есть графическая сессия.
   Флаг `--no-open` отключает автооткрытие.
 - `scripts/make_screenshots.py` — синтетические скриншоты для README:
@@ -66,15 +66,18 @@
   `docs/dashboard-demo-1.png`, `docs/dashboard-demo-2.png`,
   `docs/dashboard-demo-3.png`, `docs/calculator-demo.png`.
   Реальные продажи и ключ Ozon не используются.
-- `run_gui.sh` — запуск графического интерфейса на Ubuntu/Linux:
+- `linux/run_gui.sh` — запуск графического интерфейса на Ubuntu/Linux:
   проверяет Python 3.10+, Tkinter и графическую сессию.
-- `install_desktop.sh` и `docs/ozon-analytics.svg` — ярлык
+- `linux/install_desktop.sh` и `docs/ozon-analytics.svg` — ярлык
   **Ozon Analytics** в меню приложений Ubuntu/GNOME.
 
 ### Изменено
 
 - `README.md`: обновлены разделы «Воронка», «Ограничения», таблица ошибок,
   описание подписки Premium / Premium Plus и лимитов Ozon.
+- Скрипты запуска разложены по папкам: `windows/` (`run.bat`, `run_gui.bat`)
+  и `linux/` (`run.sh`, `run_demo.sh`, `run_gui.sh`, `install_desktop.sh`).
+  Пути в README и внутри скриптов обновлены.
 - `gui.py` стал кросс-платформенным: на Linux используются шрифты
   DejaVu Sans / DejaVu Sans Mono, проверяется наличие Tkinter,
   `xdg-open` и графической сессии, ошибки открытия файлов показываются

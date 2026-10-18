@@ -18,7 +18,7 @@ Ozon Seller API, считает метрики и собирает один ав
 - **ABC-анализ** по выручке.
 - **Алерты**: нет в наличии, хватит на <14 дней, избыток, высокие возвраты, низкая конверсия, падение выручки.
 - **Калькулятор прибыли**: сценарии «цена / себестоимость / реклама» с пересчётом на лету.
-- **Графический интерфейс для Windows и Ubuntu** (`run_gui.bat` / `run_gui.sh`):
+- **Графический интерфейс для Windows и Ubuntu** (`windows/run_gui.bat` / `linux/run_gui.sh`):
   кнопки, лог, тёмная тема.
 - **Тёмная тема** по умолчанию, кнопка переключения на светлую, выбор запоминается в браузере.
 - **Выгрузка CSV**: `sku.csv`, `daily.csv`.
@@ -80,8 +80,8 @@ py run.py all --days 30
    **с цифрами**. Если `py` не найден, а `python --version` выводит просто `Python`, это заглушка
    Microsoft Store, а не интерпретатор: переустановите Python с python.org.
 2. Скопируйте папку `ozon-analytics` куда угодно, например `C:\ozon-analytics`.
-3. **Двойной клик по `run.bat`** — соберётся демо-дашборд и сразу откроется в браузере.
-   `run.bat` сам отличает настоящий Python от заглушки Store.
+3. **Двойной клик по `windows\run.bat`** — соберётся демо-дашборд и сразу откроется в браузере.
+   `windows\run.bat` сам отличает настоящий Python от заглушки Store.
 4. Для реальных данных откройте `cmd` в папке проекта и создайте `.env`:
 
    ```bat
@@ -92,62 +92,62 @@ py run.py all --days 30
    Впишите `OZON_CLIENT_ID` и `OZON_API_KEY`, сохраните. Дальше:
 
    ```bat
-   run.bat check
-   run.bat all --days 30
+   windows\run.bat check
+   windows\run.bat all --days 30
    ```
 
 5. Демо-дашборд лежит в `out\dashboard-demo.html`, боевой — в `out\dashboard.html`;
-   оба открываются двойным кликом. Либо `run.bat serve` и адрес
+   оба открываются двойным кликом. Либо `windows\run.bat serve` и адрес
    `http://127.0.0.1:8765/dashboard.html`.
 
 Особенности Windows:
 
 - В этом проекте везде используется `py`. Если `python --version` выводит просто `Python`,
   а `py --version` — версию с цифрами, это нормально: `python` — заглушка Store, `py` — рабочий лаунчер.
-- `run.bat` включает UTF-8 для кириллицы в консоли и ставит паузу при ошибке,
-  чтобы окно не закрывалось. Он сам переходит в свою папку (`pushd "%~dp0"`), поэтому работает
+- `windows\run.bat` включает UTF-8 для кириллицы в консоли и ставит паузу при ошибке,
+  чтобы окно не закрывалось. Он сам переходит в свою папку (`pushd "%~dp0.."`), поэтому работает
   и при запуске от администратора, и из другого каталога.
 - Ошибка «Не удается найти файл …\system32\out\dashboard…» означает, что скрипт запускался
   не из своей папки (например, «от администратора» или с сетевого диска) и не смог открыть
   дашборд. Запускайте двойным кликом из локальной папки; если файл не создался — смотрите
   сообщение об ошибке выше.
 - Если браузер не запоминает выбранную тему при открытии файла напрямую (`file://`),
-  запустите `run.bat serve` — по `http://` всё работает.
+  запустите `windows\run.bat serve` — по `http://` всё работает.
 - Ежедневный запуск через Планировщик заданий:
 
 ```bat
-schtasks /create /tn "OzonAnalytics" /tr "C:\ozon-analytics\run.bat all --days 30" /sc daily /st 09:00
+schtasks /create /tn "OzonAnalytics" /tr "C:\ozon-analytics\windows\run.bat all --days 30" /sc daily /st 09:00
 ```
 
 ## Ubuntu / Linux
 
-В корне лежат два bash-скрипта:
+В папке `linux/` лежат bash-скрипты:
 
 ```bash
-chmod +x run.sh run_demo.sh   # один раз, если права не сохранились
+chmod +x linux/*.sh            # один раз, если права не сохранились
 
-./run_demo.sh                 # демо без ключа, откроет браузер
-./run_demo.sh --days 7        # демо за 7 дней
-./run_demo.sh --no-open       # не открывать браузер
+./linux/run_demo.sh           # демо без ключа, откроет браузер
+./linux/run_demo.sh --days 7  # демо за 7 дней
+./linux/run_demo.sh --no-open # не открывать браузер
 
 cp .env.example .env
 nano .env                     # OZON_CLIENT_ID, OZON_API_KEY
-./run.sh check                # проверить ключ и роли
-./run.sh all --days 30        # собрать live-отчёт
-./run.sh report               # пересобрать отчёт из снимка
-./run.sh serve --port 8765    # локальный сервер
+./linux/run.sh check          # проверить ключ и роли
+./linux/run.sh all --days 30  # собрать live-отчёт
+./linux/run.sh report         # пересобрать отчёт из снимка
+./linux/run.sh serve --port 8765 # локальный сервер
 ```
 
-`run.sh` сам находит Python 3.10+ (`python3`, `python3.13`, `python3.12`, …),
+`linux/run.sh` сам находит Python 3.10+ (`python3`, `python3.13`, `python3.12`, …),
 переходит в папку проекта и передаёт все аргументы в `run.py`. Без аргументов
 он собирает live-отчёт за 30 дней, если есть `.env`; если `.env` нет — показывает
 подсказку. Если Python установлен под нестандартным именем:
 
 ```bash
-PYTHON=python3.12 ./run.sh check
+PYTHON=python3.12 ./linux/run.sh check
 ```
 
-`run_demo.sh` — обёртка над `./run.sh demo`: собирает `out/dashboard-demo.html`
+`linux/run_demo.sh` — обёртка над `./linux/run.sh demo`: собирает `out/dashboard-demo.html`
 и открывает его через `xdg-open`, если есть графическая сессия. Флаг `--no-open`
 отключает автооткрытие (полезно на сервере и в CI).
 
@@ -160,34 +160,34 @@ PYTHON=python3.12 ./run.sh check
 
 ### Windows
 
-Запуск — двойной клик **`run_gui.bat`** (открывается без чёрной консоли) или `py gui.py`.
+Запуск — двойной клик **`windows\run_gui.bat`** (открывается без чёрной консоли) или `py gui.py`.
 
 ### Ubuntu / Linux
 
 ```bash
 sudo apt update
 sudo apt install -y python3-tk xdg-utils
-./run_gui.sh
+./linux/run_gui.sh
 ```
 
-`run_gui.sh` сам находит Python 3.10+, проверяет Tkinter и наличие графической
+`linux/run_gui.sh` сам находит Python 3.10+, проверяет Tkinter и наличие графической
 сессии, затем открывает окно. Если Tkinter нет — подскажет команду установки.
 
 Чтобы добавить приложение в меню Ubuntu, выполните один раз:
 
 ```bash
-./install_desktop.sh
+./linux/install_desktop.sh
 ```
 
 Появится ярлык **Ozon Analytics** с иконкой `docs/ozon-analytics.svg`.
-Он запускает `run_gui.sh` из папки проекта. Удалить ярлык можно так:
+Он запускает `linux/run_gui.sh` из папки проекта. Удалить ярлык можно так:
 
 ```bash
 rm ~/.local/share/applications/ozon-analytics.desktop
 ```
 
 Если окно не открывается по SSH, нужен X11-форвардинг (`ssh -X`) или запуск
-на локальном рабочем столе. В headless-среде используйте `./run.sh`.
+на локальном рабочем столе. В headless-среде используйте `./linux/run.sh`.
 
 | Кнопка | Что делает |
 |---|---|
@@ -317,7 +317,7 @@ chmod 600 .env     # чтобы файл читали только вы
 ### Шаг 4. Проверить, что ключ работает
 
 ```bash
-py run.py check          # или: run.bat check
+py run.py check          # или: windows\run.bat check
 ```
 
 Успешный ответ выглядит примерно так:
@@ -334,7 +334,7 @@ Client-Id: 123456
 какой блок не загрузился. Затем соберите данные:
 
 ```bash
-py run.py all --days 30  # или: run.bat all --days 30
+py run.py all --days 30  # или: windows\run.bat all --days 30
 ```
 
 ### Если что-то не так
@@ -513,13 +513,16 @@ py run.py calc --demo          # посмотреть без данных
 ozon-analytics/
 ├── run.py                # CLI
 ├── gui.py                # графический интерфейс (Tkinter)
-├── run.sh                # запуск на Ubuntu/Linux
-├── run_demo.sh           # демо-режим на Ubuntu/Linux
-├── run_gui.sh            # графический интерфейс на Ubuntu/Linux
-├── install_desktop.sh    # ярлык в меню приложений Ubuntu
+├── windows/
+│   ├── run.bat           # запуск в Windows
+│   └── run_gui.bat       # графический интерфейс без консоли (Windows)
+├── linux/
+│   ├── run.sh            # запуск на Ubuntu/Linux
+│   ├── run_demo.sh       # демо-режим
+│   ├── run_gui.sh        # графический интерфейс
+│   └── install_desktop.sh # ярлык в меню приложений Ubuntu
 ├── Changelog.md          # история изменений
 ├── PROBLEMS.md           # разбор проблем и логи ошибок
-├── run_gui.bat           # запуск окна без консоли (Windows)
 ├── .env.example          # образец настроек
 ├── costs.example.csv     # образец себестоимости
 ├── ozon/
